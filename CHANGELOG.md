@@ -24,6 +24,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Gateway/restart sentinel: wake the interrupted agent session via heartbeat after restart instead of only sending a best-effort restart note, retry outbound delivery once on transient failure, and preserve explicit thread/topic routing through the wake path so replies land in the correct Telegram topic or Slack thread. (#53940) Thanks @VACInc.
 - Memory/builtin sqlite: cut redundant sync and status query churn by snapshotting file state once per source, reusing sync statements, and consolidating status aggregation reads, which reduces builtin memory overhead on sync/status/doctor-style paths. Thanks @vincentkoc.
 - ACP/direct chats: always deliver a terminal ACP result when final TTS does not yield audio, even if block text already streamed earlier, and skip redundant empty-text final synthesis. (#53692) Thanks @w-sss.
 - Doctor/image generation: seed migrated legacy Nano Banana Google provider config with the `/v1beta` API root and an empty model list so `openclaw doctor --fix` completes and the migrated native Google image path keeps hitting the correct endpoint. (#53757) Thanks @mahopan.
@@ -31,6 +32,7 @@ Docs: https://docs.openclaw.ai
 - Feishu/docx block ordering: preserve the document tree order from `docx.document.convert` when inserting blocks, fixing heading/paragraph/list misordering in newly written Feishu documents. (#40524) Thanks @TaoXieSZ.
 - Agents/cron: suppress the default heartbeat system prompt for cron-triggered embedded runs even when they target non-cron session keys, so cron tasks stop reading `HEARTBEAT.md` and polluting unrelated threads. (#53152) Thanks @Protocol-zero-0.
 - TUI/chat: preserve pending user messages when a slow local run emits an empty final event, but still defer and flush the needed history reload after the newer active run finishes so silent/tool-only runs do not stay incomplete. (#53130) Thanks @joelnishanth.
+- Gateway/channels: keep channel startup sequential while isolating per-channel boot failures, so one broken channel no longer blocks later channels from starting. (#54215) Thanks @JonathanJing.
 - Docs/IRC: fix five `json55` code-fence typos in the IRC channel examples so Mintlify applies JSON5 syntax highlighting correctly. (#50842) Thanks @Hollychou924.
 - Telegram/forum topics: recover `#General` topic `1` routing when Telegram omits forum metadata, including native commands, interactive callbacks, inbound message context, and fallback error replies. (#53699) thanks @huntharo
 - Discord/config types: add missing `autoArchiveDuration` to `DiscordGuildChannelConfig` so TypeScript config definitions match the existing schema and runtime support. (#43427) Thanks @davidguttman.
@@ -104,6 +106,7 @@ Docs: https://docs.openclaw.ai
 - Gateway/supervision: stop lock conflicts from crash-looping under launchd and systemd by keeping the duplicate process in a retry wait instead of exiting as a failure while another healthy gateway still owns the lock. Fixes #52922. Thanks @vincentkoc.
 - Gateway/auth: require auth for canvas routes and admin scope for agent session reset, so anonymous canvas access and non-admin reset requests fail closed.
 - Release/install: keep previously released bundled plugins and Control UI assets in published openclaw npm installs, and fail release checks when those shipped artifacts are missing. Thanks @vincentkoc.
+- WhatsApp/outbound sends: keep the active Web listener on a direct process-global symbol so split runtime chunks keep sharing the connected Baileys session and `openclaw message send --channel whatsapp` stops failing after connect. Fixes #52574. Thanks @MonkeyLeeT.
 
 ## 2026.3.22
 
