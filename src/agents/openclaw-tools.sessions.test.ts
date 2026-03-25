@@ -768,14 +768,7 @@ describe("sessions tools", () => {
         return { status: "ok" };
       }
       if (request.method === "chat.history") {
-        return {
-          messages: [
-            {
-              role: "assistant",
-              content: [{ type: "text", text: "reset ok" }],
-            },
-          ],
-        };
+        return { messages: [] };
       }
       return {};
     });
@@ -806,12 +799,10 @@ describe("sessions tools", () => {
     });
     const details = result.details as {
       status?: string;
-      reply?: string;
       sessionKey?: string;
     };
     expect(details).toMatchObject({
       status: "ok",
-      reply: "reset ok",
       sessionKey: "agent:pm:main",
     });
 
@@ -820,6 +811,7 @@ describe("sessions tools", () => {
     );
     expect(agentCall?.[0]).toMatchObject({
       method: "agent",
+      scopes: ["operator.admin"],
       params: { sessionKey: "agent:pm:main" },
     });
   });
