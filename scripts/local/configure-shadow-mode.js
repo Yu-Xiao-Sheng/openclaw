@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
 
 const home = process.env.HOME || "/home/yuxs";
 const stateDir = path.join(home, ".openclaw");
@@ -10,7 +10,33 @@ const manifestBaseUrl = "http://0.0.0.0:2099/v1";
 const routingModel = "manifest/auto";
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-const workerIds = ["pm", "frontend", "backend", "qa"];
+const desiredAgents = [
+  {
+    id: "coordinator",
+    workspace: path.join(stateDir, "workspace-coordinator"),
+  },
+  {
+    id: "pm",
+    workspace: path.join(stateDir, "workspace-pm"),
+  },
+  {
+    id: "frontend",
+    workspace: path.join(stateDir, "workspace-frontend"),
+  },
+  {
+    id: "backend",
+    workspace: path.join(stateDir, "workspace-backend"),
+  },
+  {
+    id: "qa",
+    workspace: path.join(stateDir, "workspace-qa"),
+  },
+];
+const desiredAgentIds = new Set(desiredAgents.map((agent) => agent.id));
+const retiredAgentIds = new Set(["main", "codex"]);
+const workerIds = desiredAgents
+  .filter((agent) => agent.id !== "coordinator")
+  .map((agent) => agent.id);
 const workspaceIdentityPaths = {
   coordinator: path.join(stateDir, "workspace-coordinator", "IDENTITY.md"),
   pm: path.join(stateDir, "workspace-pm", "IDENTITY.md"),
@@ -51,11 +77,13 @@ function backupFile(filePath) {
 }
 
 function writeIfChanged(filePath, nextContent, summary) {
-  const current = fs.readFileSync(filePath, "utf8");
+  const existed = fs.existsSync(filePath);
+  const current = existed ? fs.readFileSync(filePath, "utf8") : "";
   if (current === nextContent) {
     return { changed: false, backupPath: null, summary };
   }
-  const backupPath = backupFile(filePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const backupPath = existed ? backupFile(filePath) : null;
   fs.writeFileSync(filePath, nextContent, "utf8");
   return { changed: true, backupPath, summary };
 }
@@ -122,18 +150,43 @@ function main() {
   config.agents.defaults = config.agents.defaults || {};
   config.agents.defaults.model = config.agents.defaults.model || {};
   config.agents.defaults.model.primary = routingModel;
+  config.tools = config.tools || {};
+  config.tools.sessions = config.tools.sessions || {};
+  config.tools.sessions.visibility = "all";
+  config.tools.agentToAgent = config.tools.agentToAgent || {};
+  config.tools.agentToAgent.enabled = true;
 
-  const list = Array.isArray(config.agents.list) ? config.agents.list : [];
-  if (!list.some((agent) => agent?.id === "coordinator")) {
-    throw new Error("coordinator agent not found in config");
-  }
-  for (const agent of list) {
-    if (!agent || typeof agent !== "object") {
-      continue;
-    }
-    agent.model = routingModel;
-    agent.default = agent.id === "coordinator";
-  }
+  const existingList = Array.isArray(config.agents.list) ? config.agents.list : [];
+  const existingById = new Map(
+    existingList
+      .filter((agent) => agent && typeof agent === "object" && typeof agent.id === "string")
+      .map((agent) => [agent.id, agent]),
+  );
+  const keptExtras = existingList
+    .filter(
+      (agent) =>
+        agent &&
+        typeof agent === "object" &&
+        typeof agent.id === "string" &&
+        !desiredAgentIds.has(agent.id) &&
+        !retiredAgentIds.has(agent.id),
+    )
+    .map((agent) => ({
+      ...agent,
+      default: false,
+    }));
+  config.agents.list = [
+    ...desiredAgents.map((agent) => {
+      const existing = existingById.get(agent.id);
+      return {
+        ...(existing && typeof existing === "object" ? existing : {}),
+        ...agent,
+        model: routingModel,
+        default: agent.id === "coordinator",
+      };
+    }),
+    ...keptExtras,
+  ];
   config.bindings = normalizeBindings(config);
   config.meta = config.meta || {};
   config.meta.lastTouchedAt = new Date().toISOString();
@@ -147,8 +200,9 @@ function main() {
     ),
   );
 
-  ensureFile(workspaceIdentityPaths.coordinator);
-  const coordinatorIdentity = fs.readFileSync(workspaceIdentityPaths.coordinator, "utf8");
+  const coordinatorIdentity = fs.existsSync(workspaceIdentityPaths.coordinator)
+    ? fs.readFileSync(workspaceIdentityPaths.coordinator, "utf8")
+    : "# coordinator identity\n";
   results.push(
     writeIfChanged(
       workspaceIdentityPaths.coordinator,
@@ -159,8 +213,9 @@ function main() {
 
   for (const workerId of workerIds) {
     const workerPath = workspaceIdentityPaths[workerId];
-    ensureFile(workerPath);
-    const content = fs.readFileSync(workerPath, "utf8");
+    const content = fs.existsSync(workerPath)
+      ? fs.readFileSync(workerPath, "utf8")
+      : `# ${workerId} identity\n`;
     results.push(
       writeIfChanged(
         workerPath,

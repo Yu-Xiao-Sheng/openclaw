@@ -24,7 +24,8 @@ vi.mock("./pi-embedded-helpers.js", async () => ({
   sanitizeSessionMessagesImages: vi.fn(async (msgs) => msgs),
 }));
 
-vi.mock("../plugins/provider-runtime.js", () => ({
+vi.mock("../plugins/provider-runtime.js", async () => ({
+  ...(await vi.importActual("../plugins/provider-runtime.js")),
   resolveProviderCapabilitiesWithPlugin: ({ provider }: { provider?: string }) =>
     provider === "openrouter"
       ? {
@@ -457,6 +458,7 @@ describe("sanitizeSessionHistory", () => {
     );
 
     expect(assistant?.usage).toEqual({
+      ...makeZeroUsageSnapshot(),
       input: 0,
       output: 3,
       cacheRead: 9,
@@ -504,7 +506,7 @@ describe("sanitizeSessionHistory", () => {
     });
   });
 
-  it("preserves unknown cost when token fields already match", async () => {
+  it("fills zeroed cost when token fields already match but cost is missing", async () => {
     const assistant = await getSingleAssistantUsage(
       castAgentMessages([
         { role: "user", content: "question" },
@@ -523,13 +525,13 @@ describe("sanitizeSessionHistory", () => {
     );
 
     expect(assistant?.usage).toEqual({
+      ...makeZeroUsageSnapshot(),
       input: 1,
       output: 2,
       cacheRead: 3,
       cacheWrite: 4,
       totalTokens: 10,
     });
-    expect((assistant?.usage as { cost?: unknown } | undefined)?.cost).toBeUndefined();
   });
 
   it("drops stale usage when compaction summary appears before kept assistant messages", async () => {
