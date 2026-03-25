@@ -13,6 +13,8 @@ import {
   createGlobalInstallEnv,
   detectGlobalInstallManagerByPresence,
   detectGlobalInstallManagerForRoot,
+  resolveDefaultGitRepoUrl,
+  resolveDefaultUpstreamGitRepoUrl,
   type CommandRunner,
   type GlobalInstallManager,
 } from "../../infra/update-global.js";
@@ -53,7 +55,6 @@ export function parseTimeoutMsOrExit(timeout?: string): number | undefined | nul
   return timeoutMs;
 }
 
-const OPENCLAW_REPO_URL = "https://github.com/openclaw/openclaw.git";
 const MAX_LOG_CHARS = 8000;
 
 export const DEFAULT_PACKAGE_NAME = "openclaw";
@@ -199,11 +200,12 @@ export async function ensureGitCheckout(params: {
   env?: NodeJS.ProcessEnv;
 }): Promise<UpdateStepResult | null> {
   const gitEnv = params.env ?? (await createGlobalInstallEnv());
+  const repoUrl = resolveDefaultGitRepoUrl(gitEnv);
   const dirExists = await pathExists(params.dir);
   if (!dirExists) {
     return await runUpdateStep({
       name: "git clone",
-      argv: ["git", "clone", OPENCLAW_REPO_URL, params.dir],
+      argv: ["git", "clone", repoUrl, params.dir],
       env: gitEnv,
       timeoutMs: params.timeoutMs,
       progress: params.progress,
@@ -220,7 +222,7 @@ export async function ensureGitCheckout(params: {
 
     return await runUpdateStep({
       name: "git clone",
-      argv: ["git", "clone", OPENCLAW_REPO_URL, params.dir],
+      argv: ["git", "clone", repoUrl, params.dir],
       cwd: params.dir,
       env: gitEnv,
       timeoutMs: params.timeoutMs,
@@ -233,6 +235,52 @@ export async function ensureGitCheckout(params: {
   }
 
   return null;
+}
+
+export async function ensureGitUpstreamRemote(params: {
+  dir: string;
+  timeoutMs: number;
+  progress?: UpdateStepProgress;
+  env?: NodeJS.ProcessEnv;
+}): Promise<UpdateStepResult | null> {
+  if (!(await isGitCheckout(params.dir))) {
+    return null;
+  }
+
+  const gitEnv = params.env ?? (await createGlobalInstallEnv());
+  const upstreamRepoUrl = resolveDefaultUpstreamGitRepoUrl(gitEnv);
+  const currentUrl = await runCommandWithTimeout(
+    ["git", "-C", params.dir, "remote", "get-url", "upstream"],
+    {
+      cwd: params.dir,
+      env: gitEnv,
+      timeoutMs: params.timeoutMs,
+    },
+  ).catch(() => null);
+
+  if (currentUrl?.code === 0) {
+    const existing = currentUrl.stdout.trim();
+    if (existing === upstreamRepoUrl) {
+      return null;
+    }
+    return await runUpdateStep({
+      name: "git remote set-url upstream",
+      argv: ["git", "-C", params.dir, "remote", "set-url", "upstream", upstreamRepoUrl],
+      cwd: params.dir,
+      env: gitEnv,
+      timeoutMs: params.timeoutMs,
+      progress: params.progress,
+    });
+  }
+
+  return await runUpdateStep({
+    name: "git remote add upstream",
+    argv: ["git", "-C", params.dir, "remote", "add", "upstream", upstreamRepoUrl],
+    cwd: params.dir,
+    env: gitEnv,
+    timeoutMs: params.timeoutMs,
+    progress: params.progress,
+  });
 }
 
 export async function resolveGlobalManager(params: {

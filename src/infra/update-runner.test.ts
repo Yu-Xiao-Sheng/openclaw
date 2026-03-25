@@ -301,10 +301,8 @@ describe("runGatewayUpdate", () => {
     await setupGitCheckout();
     const { runner, calls } = createRunner({
       ...buildGitWorktreeProbeResponses(),
-      [`git -C ${tempDir} rev-parse --abbrev-ref --symbolic-full-name @{upstream}`]: {
-        stdout: "origin/main",
-      },
       [`git -C ${tempDir} fetch --all --prune --tags`]: { stdout: "" },
+      [`git -C ${tempDir} rev-parse upstream/main`]: { stdout: "upstream123" },
       [`git -C ${tempDir} rev-parse @{upstream}`]: { stdout: "upstream123" },
       [`git -C ${tempDir} rev-list --max-count=10 upstream123`]: { stdout: "upstream123\n" },
       [`git -C ${tempDir} rebase upstream123`]: { code: 1, stderr: "conflict" },
@@ -316,6 +314,10 @@ describe("runGatewayUpdate", () => {
     expect(result.status).toBe("error");
     expect(result.reason).toBe("rebase-failed");
     expect(calls.some((call) => call.includes("rebase --abort"))).toBe(true);
+    expect(calls).toContain(`git -C ${tempDir} rev-parse upstream/main`);
+    expect(calls).not.toContain(
+      `git -C ${tempDir} rev-parse --abbrev-ref --symbolic-full-name @{upstream}`,
+    );
   });
 
   it("returns error and stops early when deps install fails", async () => {
@@ -569,14 +571,14 @@ describe("runGatewayUpdate", () => {
   it("updates global npm installs from the GitHub main package spec", async () => {
     const { calls, result } = await runNpmGlobalUpdateCase({
       expectedInstallCommand:
-        "npm i -g github:openclaw/openclaw#main --no-fund --no-audit --loglevel=error",
+        "npm i -g github:Yu-Xiao-Sheng/openclaw#main --no-fund --no-audit --loglevel=error",
       tag: "main",
     });
 
     expect(result.status).toBe("ok");
     expect(result.mode).toBe("npm");
     expect(calls).toContain(
-      "npm i -g github:openclaw/openclaw#main --no-fund --no-audit --loglevel=error",
+      "npm i -g github:Yu-Xiao-Sheng/openclaw#main --no-fund --no-audit --loglevel=error",
     );
   });
 

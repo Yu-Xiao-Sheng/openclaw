@@ -55,6 +55,7 @@ import {
   DEFAULT_PACKAGE_NAME,
   createGlobalCommandRunner,
   ensureGitCheckout,
+  ensureGitUpstreamRemote,
   normalizeTag,
   parseTimeoutMsOrExit,
   readPackageName,
@@ -431,6 +432,28 @@ async function runGitUpdate(params: {
     return result;
   }
 
+  const upstreamRemoteStep = await ensureGitUpstreamRemote({
+    dir: updateRoot,
+    env: installEnv,
+    timeoutMs: effectiveTimeout,
+    progress: params.progress,
+  });
+
+  if (upstreamRemoteStep && upstreamRemoteStep.exitCode !== 0) {
+    const result: UpdateRunResult = {
+      status: "error",
+      mode: "git",
+      root: updateRoot,
+      reason: upstreamRemoteStep.name,
+      steps: [...(cloneStep ? [cloneStep] : []), upstreamRemoteStep],
+      durationMs: Date.now() - params.startedAt,
+    };
+    params.stop();
+    printResult(result, { ...params.opts, hideSteps: params.showProgress });
+    defaultRuntime.exit(1);
+    return result;
+  }
+
   const updateResult = await runGatewayUpdate({
     cwd: updateRoot,
     argv1: params.switchToGit ? undefined : process.argv[1],
@@ -439,7 +462,11 @@ async function runGitUpdate(params: {
     channel: params.channel,
     tag: params.tag,
   });
-  const steps = [...(cloneStep ? [cloneStep] : []), ...updateResult.steps];
+  const steps = [
+    ...(cloneStep ? [cloneStep] : []),
+    ...(upstreamRemoteStep ? [upstreamRemoteStep] : []),
+    ...updateResult.steps,
+  ];
 
   if (params.switchToGit && updateResult.status === "ok") {
     const manager = await resolveGlobalManager({

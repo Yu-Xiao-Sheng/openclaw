@@ -499,7 +499,7 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
     const channel: UpdateChannel = opts.channel ?? "dev";
     const branch = channel === "dev" ? await readBranchName(runCommand, gitRoot, timeoutMs) : null;
     const needsCheckoutMain = channel === "dev" && branch !== DEV_BRANCH;
-    gitTotalSteps = channel === "dev" ? (needsCheckoutMain ? 11 : 10) : 9;
+    gitTotalSteps = channel === "dev" ? (needsCheckoutMain ? 12 : 11) : 9;
     const buildGitErrorResult = (reason: string): UpdateRunResult => ({
       status: "error",
       mode: "git",
@@ -554,49 +554,76 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
         }
       }
 
-      const upstreamStep = await runStep(
-        step(
-          "upstream check",
-          [
-            "git",
-            "-C",
-            gitRoot,
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-          ],
-          gitRoot,
-        ),
+      const fetchStep = await runStep(
+        step("git fetch", ["git", "-C", gitRoot, "fetch", "--all", "--prune", "--tags"], gitRoot),
       );
-      steps.push(upstreamStep);
-      if (upstreamStep.exitCode !== 0) {
+      steps.push(fetchStep);
+      if (fetchStep.exitCode !== 0) {
         return {
-          status: "skipped",
+          status: "error",
           mode: "git",
           root: gitRoot,
-          reason: "no-upstream",
+          reason: "fetch-failed",
           before: { sha: beforeSha, version: beforeVersion },
           steps,
           durationMs: Date.now() - startedAt,
         };
       }
 
-      const fetchStep = await runStep(
-        step("git fetch", ["git", "-C", gitRoot, "fetch", "--all", "--prune", "--tags"], gitRoot),
-      );
-      steps.push(fetchStep);
-
-      const upstreamShaStep = await runStep(
+      let upstreamSha: string | null = null;
+      const upstreamMainShaStep = await runStep(
         step(
-          "git rev-parse @{upstream}",
-          ["git", "-C", gitRoot, "rev-parse", "@{upstream}"],
+          "git rev-parse upstream/main",
+          ["git", "-C", gitRoot, "rev-parse", "upstream/main"],
           gitRoot,
         ),
       );
-      steps.push(upstreamShaStep);
-      const upstreamSha = upstreamShaStep.stdoutTail?.trim();
-      if (!upstreamShaStep.stdoutTail || !upstreamSha) {
+      steps.push(upstreamMainShaStep);
+      if (upstreamMainShaStep.exitCode === 0) {
+        upstreamSha = upstreamMainShaStep.stdoutTail?.trim() ?? null;
+      }
+
+      if (!upstreamSha) {
+        const upstreamStep = await runStep(
+          step(
+            "upstream check",
+            [
+              "git",
+              "-C",
+              gitRoot,
+              "rev-parse",
+              "--abbrev-ref",
+              "--symbolic-full-name",
+              "@{upstream}",
+            ],
+            gitRoot,
+          ),
+        );
+        steps.push(upstreamStep);
+        if (upstreamStep.exitCode !== 0) {
+          return {
+            status: "skipped",
+            mode: "git",
+            root: gitRoot,
+            reason: "no-upstream",
+            before: { sha: beforeSha, version: beforeVersion },
+            steps,
+            durationMs: Date.now() - startedAt,
+          };
+        }
+
+        const upstreamShaStep = await runStep(
+          step(
+            "git rev-parse @{upstream}",
+            ["git", "-C", gitRoot, "rev-parse", "@{upstream}"],
+            gitRoot,
+          ),
+        );
+        steps.push(upstreamShaStep);
+        upstreamSha = upstreamShaStep.stdoutTail?.trim() ?? null;
+      }
+
+      if (!upstreamSha) {
         return {
           status: "error",
           mode: "git",

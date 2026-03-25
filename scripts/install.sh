@@ -1884,7 +1884,8 @@ resolve_openclaw_bin() {
 
 install_openclaw_from_git() {
     local repo_dir="$1"
-    local repo_url="https://github.com/openclaw/openclaw.git"
+    local repo_url="${OPENCLAW_UPDATE_GIT_REPO_URL:-https://github.com/Yu-Xiao-Sheng/openclaw.git}"
+    local upstream_url="${OPENCLAW_UPDATE_UPSTREAM_GIT_REPO_URL:-https://github.com/openclaw/openclaw.git}"
 
     if [[ -d "$repo_dir/.git" ]]; then
         ui_info "Installing OpenClaw from git checkout: ${repo_dir}"
@@ -1903,11 +1904,28 @@ install_openclaw_from_git() {
         run_quiet_step "Cloning OpenClaw" git clone "$repo_url" "$repo_dir"
     fi
 
+    if git -C "$repo_dir" remote get-url upstream >/dev/null 2>&1; then
+        local current_upstream=""
+        current_upstream="$(git -C "$repo_dir" remote get-url upstream 2>/dev/null || true)"
+        if [[ "$current_upstream" != "$upstream_url" ]]; then
+            run_quiet_step "Configuring upstream remote" git -C "$repo_dir" remote set-url upstream "$upstream_url"
+        fi
+    else
+        run_quiet_step "Configuring upstream remote" git -C "$repo_dir" remote add upstream "$upstream_url"
+    fi
+
     if [[ "$GIT_UPDATE" == "1" ]]; then
         if [[ -z "$(git -C "$repo_dir" status --porcelain 2>/dev/null || true)" ]]; then
-            run_quiet_step "Updating repository" git -C "$repo_dir" pull --rebase || true
+            run_quiet_step "Fetching repository remotes" git -C "$repo_dir" fetch --all --prune --tags || true
+            local current_branch=""
+            current_branch="$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+            if [[ "$current_branch" == "main" ]] && git -C "$repo_dir" rev-parse --verify upstream/main >/dev/null 2>&1; then
+                run_quiet_step "Syncing with upstream/main" git -C "$repo_dir" rebase upstream/main || true
+            else
+                run_quiet_step "Updating repository" git -C "$repo_dir" pull --rebase || true
+            fi
         else
-            ui_info "Repo has local changes; skipping git pull"
+            ui_info "Repo has local changes; skipping git sync"
         fi
     fi
 
@@ -1965,7 +1983,7 @@ resolve_package_install_spec() {
     local package_name="$1"
     local value="$2"
     if [[ "${value,,}" == "main" ]]; then
-        echo "github:openclaw/openclaw#main"
+        echo "${OPENCLAW_UPDATE_MAIN_PACKAGE_SPEC:-github:Yu-Xiao-Sheng/openclaw#main}"
         return 0
     fi
     if is_explicit_package_install_spec "$value"; then
