@@ -5,6 +5,7 @@ import type { OpenClawConfig } from "../../config/config.js";
 import { loadConfig } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
+import { runSubagentAnnounceFlow } from "../subagent-announce.js";
 import { getSubagentDepthFromSessionStore } from "../subagent-depth.js";
 import {
   buildWorkerDirectory,
@@ -32,6 +33,9 @@ type SessionListRow = {
   status?: string;
 };
 
+export const WORKER_DISPATCH_ACCEPTED_NOTE =
+  "Named worker completion is push-based. After dispatching workers, do NOT poll sessions_list or sessions_history in a loop. Use sessions_yield to wait for completion events to arrive as follow-up messages, then synthesize the results.";
+
 function buildDispatchMessage(task: string): string {
   return [
     "[Named Worker Dispatch]",
@@ -39,6 +43,45 @@ function buildDispatchMessage(task: string): string {
     "",
     task.trim(),
   ].join("\n");
+}
+
+function resolveWorkerAnnounceTimeoutSeconds(params: {
+  cfg: OpenClawConfig;
+  requestedTimeoutSeconds: number;
+}): number {
+  const configuredTimeoutSeconds =
+    typeof params.cfg.agents?.defaults?.timeoutSeconds === "number" &&
+    Number.isFinite(params.cfg.agents.defaults.timeoutSeconds)
+      ? Math.max(0, Math.floor(params.cfg.agents.defaults.timeoutSeconds))
+      : 600;
+  return Math.max(60, configuredTimeoutSeconds, params.requestedTimeoutSeconds);
+}
+
+function scheduleWorkerCompletionAnnounce(params: {
+  announceCompletion: typeof runSubagentAnnounceFlow;
+  requesterSessionKey: string;
+  runId: string;
+  sessionKey: string;
+  task: string;
+  timeoutSeconds: number;
+}) {
+  void params
+    .announceCompletion({
+      childSessionKey: params.sessionKey,
+      childRunId: params.runId,
+      requesterSessionKey: params.requesterSessionKey,
+      requesterDisplayKey: params.requesterSessionKey,
+      task: params.task,
+      timeoutMs: Math.max(1, params.timeoutSeconds) * 1000,
+      cleanup: "keep",
+      waitForCompletion: true,
+      expectsCompletionMessage: true,
+      spawnMode: "session",
+      bestEffortDeliver: true,
+    })
+    .catch(() => {
+      // Best-effort wake path only.
+    });
 }
 
 function sortSessionsByFreshness(rows: SessionListRow[]): SessionListRow[] {
@@ -218,6 +261,7 @@ export function createWorkersDispatchTool(opts?: {
   requesterAgentIdOverride?: string;
   config?: OpenClawConfig;
   callGateway?: GatewayCaller;
+  announceCompletion?: typeof runSubagentAnnounceFlow;
 }): AnyAgentTool {
   return {
     label: "Workers",
@@ -229,6 +273,7 @@ export function createWorkersDispatchTool(opts?: {
       const params = args as Record<string, unknown>;
       const cfg = opts?.config ?? loadConfig();
       const gatewayCall = opts?.callGateway ?? callGateway;
+      const announceCompletion = opts?.announceCompletion ?? runSubagentAnnounceFlow;
       const requester = resolveWorkerRequesterContext({
         cfg,
         agentSessionKey: opts?.agentSessionKey,
@@ -242,6 +287,10 @@ export function createWorkersDispatchTool(opts?: {
         typeof params.timeoutSeconds === "number" && Number.isFinite(params.timeoutSeconds)
           ? Math.max(0, Math.floor(params.timeoutSeconds))
           : 30;
+      const announceTimeoutSeconds = resolveWorkerAnnounceTimeoutSeconds({
+        cfg,
+        requestedTimeoutSeconds: timeoutSeconds,
+      });
       const maxSpawnDepth =
         cfg.agents?.defaults?.subagents?.maxSpawnDepth ?? DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH;
       const callerDepth = getSubagentDepthFromSessionStore(requester.requesterInternalKey, {
@@ -350,6 +399,14 @@ export function createWorkersDispatchTool(opts?: {
       }
 
       if (!wait || timeoutSeconds === 0) {
+        scheduleWorkerCompletionAnnounce({
+          announceCompletion,
+          requesterSessionKey: requester.requesterInternalKey,
+          runId,
+          sessionKey,
+          task,
+          timeoutSeconds: announceTimeoutSeconds,
+        });
         return jsonResult({
           status: "accepted",
           agentId,
@@ -357,6 +414,7 @@ export function createWorkersDispatchTool(opts?: {
           sessionKey,
           created,
           runId,
+          note: WORKER_DISPATCH_ACCEPTED_NOTE,
           duplicateSessions:
             workerSession.duplicateCount > 1 ? workerSession.duplicateCount : undefined,
           dispatchMode: interruptRunning ? "steer" : "send",

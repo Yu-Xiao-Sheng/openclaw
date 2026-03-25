@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 
 const callGatewayMock = vi.fn();
+const runSubagentAnnounceFlowMock = vi.fn();
 vi.mock("../gateway/call.js", () => ({
   callGateway: (opts: unknown) => callGatewayMock(opts),
 }));
@@ -89,6 +90,7 @@ function createConfig(workspaces: {
 describe("workers tools", () => {
   beforeEach(() => {
     callGatewayMock.mockReset();
+    runSubagentAnnounceFlowMock.mockReset().mockResolvedValue(true);
   });
 
   it("workers_list returns routable named workers with capability summaries", async () => {
@@ -121,6 +123,7 @@ describe("workers tools", () => {
     openClawToolsTesting.setDepsForTest({
       config,
       callGateway: (opts: unknown) => callGatewayMock(opts),
+      announceWorkerCompletion: (opts: unknown) => runSubagentAnnounceFlowMock(opts),
     });
 
     const tool = createOpenClawTools({
@@ -157,6 +160,7 @@ describe("workers tools", () => {
     openClawToolsTesting.setDepsForTest({
       config,
       callGateway: (opts: unknown) => callGatewayMock(opts),
+      announceWorkerCompletion: (opts: unknown) => runSubagentAnnounceFlowMock(opts),
     });
 
     callGatewayMock.mockImplementation(
@@ -217,6 +221,7 @@ describe("workers tools", () => {
     expect(details.sessionKey).toMatch(/^agent:frontend:subagent:/);
     expect(details.reply).toBe("frontend complete");
     expect(details.runId).toBe("worker-run-1");
+    expect(runSubagentAnnounceFlowMock).not.toHaveBeenCalled();
 
     const patchCall = callGatewayMock.mock.calls.find(
       ([request]) => (request as { method?: string }).method === "sessions.patch",
@@ -238,6 +243,7 @@ describe("workers tools", () => {
     openClawToolsTesting.setDepsForTest({
       config,
       callGateway: (opts: unknown) => callGatewayMock(opts),
+      announceWorkerCompletion: (opts: unknown) => runSubagentAnnounceFlowMock(opts),
     });
 
     callGatewayMock.mockImplementation(
@@ -276,6 +282,7 @@ describe("workers tools", () => {
       sessionKey?: string;
       duplicateSessions?: number;
       dispatchMode?: string;
+      note?: string;
     };
 
     expect(details.status).toBe("accepted");
@@ -283,11 +290,23 @@ describe("workers tools", () => {
     expect(details.sessionKey).toBe("agent:pm:subagent:newer");
     expect(details.duplicateSessions).toBe(2);
     expect(details.dispatchMode).toBe("steer");
+    expect(details.note).toContain("push-based");
 
     const methods = callGatewayMock.mock.calls.map(
       ([request]) => (request as { method?: string }).method,
     );
     expect(methods).toContain("sessions.steer");
     expect(methods).not.toContain("sessions.create");
+    expect(runSubagentAnnounceFlowMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        childSessionKey: "agent:pm:subagent:newer",
+        childRunId: "worker-run-2",
+        requesterSessionKey: "agent:coordinator:main",
+        task: "Re-scope milestone two.",
+        cleanup: "keep",
+        waitForCompletion: true,
+        expectsCompletionMessage: true,
+      }),
+    );
   });
 });

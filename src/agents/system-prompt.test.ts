@@ -261,6 +261,7 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("workers_list");
     expect(prompt).toContain("workers_dispatch");
     expect(prompt).toContain("call `workers_list` first");
+    expect(prompt).toContain("Named worker completion is push-based");
     expect(prompt).toContain("Use `sessions_spawn` only for scratch or temporary helpers");
     expect(prompt).toContain("set `scratch: true`");
   });

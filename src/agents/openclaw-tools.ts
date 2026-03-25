@@ -6,6 +6,7 @@ import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import type { SpawnedToolContext } from "./spawned-context.js";
+import { runSubagentAnnounceFlow } from "./subagent-announce.js";
 import type { ToolFsPolicy } from "./tool-fs-policy.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createBrowserTool } from "./tools/browser-tool.js";
@@ -34,10 +35,12 @@ import { resolveWorkspaceRoot } from "./workspace-dir.js";
 type OpenClawToolsDeps = {
   callGateway: typeof callGateway;
   config?: OpenClawConfig;
+  announceWorkerCompletion?: typeof runSubagentAnnounceFlow;
 };
 
 const defaultOpenClawToolsDeps: OpenClawToolsDeps = {
   callGateway,
+  announceWorkerCompletion: runSubagentAnnounceFlow,
 };
 
 let openClawToolsDeps: OpenClawToolsDeps = defaultOpenClawToolsDeps;
@@ -206,6 +209,7 @@ export function createOpenClawTools(
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
       config: resolvedConfig,
       callGateway: openClawToolsDeps.callGateway,
+      announceCompletion: openClawToolsDeps.announceWorkerCompletion,
     }),
     createSessionsListTool({
       agentSessionKey: options?.agentSessionKey,

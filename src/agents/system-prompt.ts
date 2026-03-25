@@ -446,6 +446,7 @@ export function buildAgentSystemPrompt(params: {
     ...(hasWorkerDirectory
       ? [
           "When the work clearly belongs to an existing named role or agent, call `workers_list` first, then assign it with `workers_dispatch(agentId, task)`.",
+          "Named worker completion is push-based: after dispatching workers, use `sessions_yield` and wait for completion events instead of polling.",
           "Use `sessions_spawn` only for scratch or temporary helpers, and set `scratch: true` when taking that path.",
           "Do not use `sessions_spawn` as a substitute for named workers that already exist; named-role routing must go through `workers_dispatch`.",
         ]
