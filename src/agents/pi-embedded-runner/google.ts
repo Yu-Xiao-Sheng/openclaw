@@ -263,23 +263,24 @@ function stripStaleAssistantUsageBeforeLatestCompaction(messages: AgentMessage[]
 }
 
 function normalizeAssistantUsageSnapshot(usage: unknown) {
+  const zeroSnapshot = makeZeroUsageSnapshot();
   const normalized = normalizeUsage((usage ?? undefined) as UsageLike | undefined);
   if (!normalized) {
-    return makeZeroUsageSnapshot();
+    return zeroSnapshot;
   }
   const input = normalized.input ?? 0;
   const output = normalized.output ?? 0;
   const cacheRead = normalized.cacheRead ?? 0;
   const cacheWrite = normalized.cacheWrite ?? 0;
   const totalTokens = normalized.total ?? input + output + cacheRead + cacheWrite;
-  const cost = normalizeAssistantUsageCost(usage);
+  const cost = normalizeAssistantUsageCost(usage) ?? zeroSnapshot.cost;
   return {
     input,
     output,
     cacheRead,
     cacheWrite,
     totalTokens,
-    ...(cost ? { cost } : {}),
+    cost,
   };
 }
 
