@@ -147,6 +147,133 @@ describe("openclaw-tools: subagents (sessions_spawn allowlist)", () => {
     expect(callGatewayMock).not.toHaveBeenCalled();
   });
 
+  it("requires scratch=true for anonymous same-agent spawns when named workers exist", async () => {
+    setSessionsSpawnConfigOverride({
+      session: {
+        mainKey: "main",
+        scope: "per-sender",
+      },
+      tools: {
+        agentToAgent: {
+          enabled: true,
+          allow: ["coordinator", "pm"],
+        },
+      },
+      agents: {
+        list: [
+          {
+            id: "coordinator",
+            subagents: {
+              allowAgents: ["pm"],
+            },
+          },
+          {
+            id: "pm",
+          },
+        ],
+      },
+    });
+
+    const tool = await getSessionsSpawnTool({
+      agentSessionKey: "agent:coordinator:main",
+      agentChannel: "whatsapp",
+    });
+
+    const result = await tool.execute("call-same-agent-blocked", {
+      task: "draft a helper response",
+    });
+    const details = result.details as { status?: string; error?: string };
+    expect(details.status).toBe("forbidden");
+    expect(details.error).toContain("Anonymous same-agent sessions_spawn is disabled");
+    expect(details.error).toContain("workers_dispatch");
+    expect(callGatewayMock).not.toHaveBeenCalled();
+  });
+
+  it("allows anonymous same-agent spawns with scratch=true even when named workers exist", async () => {
+    setSessionsSpawnConfigOverride({
+      session: {
+        mainKey: "main",
+        scope: "per-sender",
+      },
+      tools: {
+        agentToAgent: {
+          enabled: true,
+          allow: ["coordinator", "pm"],
+        },
+      },
+      agents: {
+        list: [
+          {
+            id: "coordinator",
+            subagents: {
+              allowAgents: ["pm"],
+            },
+          },
+          {
+            id: "pm",
+          },
+        ],
+      },
+    });
+    const getChildSessionKey = mockAcceptedSpawn(5300);
+
+    const tool = await getSessionsSpawnTool({
+      agentSessionKey: "agent:coordinator:main",
+      agentChannel: "whatsapp",
+    });
+
+    const result = await tool.execute("call-same-agent-scratch", {
+      task: "draft a helper response",
+      scratch: true,
+    });
+    const details = result.details as { status?: string };
+    expect(details.status).toBe("accepted");
+    expect(getChildSessionKey()?.startsWith("agent:coordinator:subagent:")).toBe(true);
+  });
+
+  it("rejects named worker targets in sessions_spawn and requires workers_dispatch", async () => {
+    setSessionsSpawnConfigOverride({
+      session: {
+        mainKey: "main",
+        scope: "per-sender",
+      },
+      tools: {
+        agentToAgent: {
+          enabled: true,
+          allow: ["coordinator", "pm"],
+        },
+      },
+      agents: {
+        list: [
+          {
+            id: "coordinator",
+            subagents: {
+              allowAgents: ["pm"],
+            },
+          },
+          {
+            id: "pm",
+          },
+        ],
+      },
+    });
+
+    const tool = await getSessionsSpawnTool({
+      agentSessionKey: "agent:coordinator:main",
+      agentChannel: "whatsapp",
+    });
+
+    const result = await tool.execute("call-worker-blocked", {
+      task: "do PM work",
+      agentId: "pm",
+    });
+    const details = result.details as { status?: string; error?: string };
+    expect(details.status).toBe("forbidden");
+    expect(details.error).toContain("named worker");
+    expect(details.error).toContain("workers_dispatch");
+    expect(callGatewayMock).not.toHaveBeenCalled();
+  });
+
   it("sessions_spawn forbids cross-agent spawning when not allowed", async () => {
     setSessionsSpawnConfigOverride({
       session: {

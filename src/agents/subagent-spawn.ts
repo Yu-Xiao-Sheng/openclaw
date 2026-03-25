@@ -42,6 +42,7 @@ import {
   resolveInternalSessionKey,
   resolveMainSessionAlias,
 } from "./tools/sessions-helpers.js";
+import { buildWorkerDirectory } from "./worker-directory.js";
 
 export const SUBAGENT_SPAWN_MODES = ["run", "session"] as const;
 export type SpawnSubagentMode = (typeof SUBAGENT_SPAWN_MODES)[number];
@@ -54,6 +55,7 @@ export type SpawnSubagentParams = {
   task: string;
   label?: string;
   agentId?: string;
+  scratch?: boolean;
   model?: string;
   thinking?: string;
   runTimeoutSeconds?: number;
@@ -391,6 +393,29 @@ export async function spawnSubagentDirect(
     ctx.requesterAgentIdOverride ?? parseAgentSessionKey(requesterInternalKey)?.agentId,
   );
   const targetAgentId = requestedAgentId ? normalizeAgentId(requestedAgentId) : requesterAgentId;
+  const scratch = params.scratch === true;
+  const workerDirectory = buildWorkerDirectory({
+    cfg,
+    requesterAgentId,
+  });
+  const workerIds = new Set(workerDirectory.workers.map((entry) => entry.id));
+  const hasNamedRoutableWorkers = workerDirectory.workers.length > 0;
+
+  if (targetAgentId === requesterAgentId && hasNamedRoutableWorkers && !scratch) {
+    const availableWorkers = workerDirectory.workers.map((entry) => entry.id);
+    return {
+      status: "forbidden",
+      error: `Anonymous same-agent sessions_spawn is disabled for ${requesterAgentId} because named workers are configured (${availableWorkers.join(", ")}). Use workers_dispatch(agentId, task) for named-role work, or set scratch=true only for a temporary same-agent helper.`,
+    };
+  }
+
+  if (targetAgentId !== requesterAgentId && workerIds.has(targetAgentId)) {
+    return {
+      status: "forbidden",
+      error: `Target agent ${targetAgentId} is a named worker. Use workers_dispatch(agentId, task) instead of sessions_spawn so the coordinator routes through the stable worker session.`,
+    };
+  }
+
   if (targetAgentId !== requesterAgentId) {
     const allowAgents = resolveAgentConfig(cfg, requesterAgentId)?.subagents?.allowAgents ?? [];
     const allowAny = allowAgents.some((value) => value.trim() === "*");

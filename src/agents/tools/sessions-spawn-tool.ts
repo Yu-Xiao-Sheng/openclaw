@@ -25,6 +25,12 @@ const SessionsSpawnToolSchema = Type.Object({
   label: Type.Optional(Type.String()),
   runtime: optionalStringEnum(SESSIONS_SPAWN_RUNTIMES),
   agentId: Type.Optional(Type.String()),
+  scratch: Type.Optional(
+    Type.Boolean({
+      description:
+        "For temporary same-agent helpers only. When named worker agents exist, set scratch=true to allow an anonymous helper; otherwise use workers_dispatch for named-role routing.",
+    }),
+  ),
   resumeSessionId: Type.Optional(
     Type.String({
       description:
@@ -97,6 +103,7 @@ export function createSessionsSpawnTool(
       const label = typeof params.label === "string" ? params.label.trim() : "";
       const runtime = params.runtime === "acp" ? "acp" : "subagent";
       const requestedAgentId = readStringParam(params, "agentId");
+      const scratch = params.scratch === true;
       const resumeSessionId = readStringParam(params, "resumeSessionId");
       const modelOverride = readStringParam(params, "model");
       const thinkingOverrideRaw = readStringParam(params, "thinking");
@@ -178,6 +185,7 @@ export function createSessionsSpawnTool(
           task,
           label: label || undefined,
           agentId: requestedAgentId,
+          scratch,
           model: modelOverride,
           thinking: thinkingOverrideRaw,
           runTimeoutSeconds,

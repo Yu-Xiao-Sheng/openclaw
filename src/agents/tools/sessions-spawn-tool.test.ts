@@ -80,6 +80,7 @@ describe("sessions_spawn tool", () => {
       expect.objectContaining({
         task: "build feature",
         agentId: "main",
+        scratch: false,
         model: "anthropic/claude-sonnet-4-6",
         thinking: "medium",
         runTimeoutSeconds: 5,
@@ -110,6 +111,25 @@ describe("sessions_spawn tool", () => {
       expect.objectContaining({
         workspaceDir: "/parent/workspace",
       }),
+    );
+  });
+
+  it("forwards scratch mode for explicit anonymous helper spawns", async () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:coordinator:main",
+    });
+
+    await tool.execute("call-scratch", {
+      task: "draft a temporary outline",
+      scratch: true,
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: "draft a temporary outline",
+        scratch: true,
+      }),
+      expect.any(Object),
     );
   });
 
