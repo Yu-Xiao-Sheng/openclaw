@@ -252,6 +252,18 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("sessions_send");
   });
 
+  it("prefers named worker routing when worker tools are available", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["workers_list", "workers_dispatch", "sessions_spawn"],
+    });
+
+    expect(prompt).toContain("workers_list");
+    expect(prompt).toContain("workers_dispatch");
+    expect(prompt).toContain("call `workers_list` first");
+    expect(prompt).toContain("Use `sessions_spawn` for scratch or temporary helpers");
+  });
+
   it("documents ACP sessions_spawn agent targeting requirements", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

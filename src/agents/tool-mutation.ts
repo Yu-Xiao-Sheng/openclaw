@@ -7,6 +7,7 @@ const MUTATING_TOOL_NAMES = new Set([
   "process",
   "message",
   "sessions_send",
+  "workers_dispatch",
   "cron",
   "gateway",
   "canvas",
@@ -124,6 +125,7 @@ export function isMutatingToolCall(toolName: string, args: unknown): boolean {
     case "exec":
     case "bash":
     case "sessions_send":
+    case "workers_dispatch":
       return true;
     case "process":
       return action != null && PROCESS_MUTATING_ACTIONS.has(action);
@@ -189,6 +191,8 @@ export function buildToolActionFingerprint(
   hasStableTarget =
     appendFingerprintAlias(parts, record, "sessionkey", ["sessionKey", "session_key"]) ||
     hasStableTarget;
+  hasStableTarget =
+    appendFingerprintAlias(parts, record, "agentid", ["agentId", "agent_id"]) || hasStableTarget;
   hasStableTarget =
     appendFingerprintAlias(parts, record, "jobid", ["jobId", "job_id"]) || hasStableTarget;
   hasStableTarget = appendFingerprintAlias(parts, record, "id", ["id"]) || hasStableTarget;

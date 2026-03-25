@@ -122,6 +122,22 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "workers_list",
+    label: "workers_list",
+    description: "List named workers",
+    sectionId: "sessions",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "workers_dispatch",
+    label: "workers_dispatch",
+    description: "Dispatch named worker",
+    sectionId: "sessions",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "sessions_history",
     label: "sessions_history",
     description: "Session history",

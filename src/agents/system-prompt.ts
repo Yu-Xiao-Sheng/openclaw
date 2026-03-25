@@ -245,6 +245,10 @@ export function buildAgentSystemPrompt(params: {
     agents_list: acpSpawnRuntimeEnabled
       ? 'List OpenClaw agent ids allowed for sessions_spawn when runtime="subagent" (not ACP harness ids)'
       : "List OpenClaw agent ids allowed for sessions_spawn",
+    workers_list:
+      "List named worker agents you can route to, including capability summaries from their current setup",
+    workers_dispatch:
+      "Dispatch a task to a named worker agent by agentId using a persistent internal worker session",
     sessions_list: "List other sessions (incl. sub-agents) with filters/last",
     sessions_history: "Fetch history for another session/sub-agent",
     sessions_send: "Send a message to another session/sub-agent",
@@ -277,6 +281,8 @@ export function buildAgentSystemPrompt(params: {
     "message",
     "gateway",
     "agents_list",
+    "workers_list",
+    "workers_dispatch",
     "sessions_list",
     "sessions_history",
     "sessions_send",
@@ -302,6 +308,8 @@ export function buildAgentSystemPrompt(params: {
   const normalizedTools = canonicalToolNames.map((tool) => tool.toLowerCase());
   const availableTools = new Set(normalizedTools);
   const hasSessionsSpawn = availableTools.has("sessions_spawn");
+  const hasWorkerDispatch = availableTools.has("workers_dispatch");
+  const hasWorkerDirectory = availableTools.has("workers_list") && hasWorkerDispatch;
   const acpHarnessSpawnAllowed = hasSessionsSpawn && acpSpawnRuntimeEnabled;
   const externalToolSummaries = new Map<string, string>();
   for (const [key, value] of Object.entries(params.toolSummaries ?? {})) {
@@ -424,6 +432,8 @@ export function buildAgentSystemPrompt(params: {
           "- canvas: present/eval/snapshot the Canvas",
           "- nodes: list/describe/notify/camera/screen on paired nodes",
           "- cron: manage cron jobs and wake events (use for reminders; when scheduling a reminder, write the systemEvent text as something that will read like a reminder when it fires, and mention that it is a reminder depending on the time gap between setting and firing; include recent context in reminder text if appropriate)",
+          "- workers_list: list named worker agents",
+          "- workers_dispatch: dispatch to a named worker session",
           "- sessions_list: list sessions",
           "- sessions_history: fetch session history",
           "- sessions_send: send to another session",
@@ -433,6 +443,12 @@ export function buildAgentSystemPrompt(params: {
     "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
     `For long waits, avoid rapid poll loops: use ${execToolName} with enough yieldMs or ${processToolName}(action=poll, timeout=<ms>).`,
     "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
+    ...(hasWorkerDirectory
+      ? [
+          "When the work clearly belongs to an existing named role or agent, call `workers_list` first, then assign it with `workers_dispatch(agentId, task)`.",
+          "Use `sessions_spawn` for scratch or temporary helpers, not as a substitute for named workers that already exist.",
+        ]
+      : []),
     ...(acpHarnessSpawnAllowed
       ? [
           'For requests like "do this in codex/claude code/gemini", treat it as ACP harness intent and call `sessions_spawn` with `runtime: "acp"`.',

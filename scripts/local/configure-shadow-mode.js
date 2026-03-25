@@ -34,24 +34,15 @@ const desiredAgents = [
 ];
 const desiredAgentIds = new Set(desiredAgents.map((agent) => agent.id));
 const retiredAgentIds = new Set(["main", "codex"]);
-const workerIds = desiredAgents
-  .filter((agent) => agent.id !== "coordinator")
-  .map((agent) => agent.id);
-const workspaceIdentityPaths = {
-  coordinator: path.join(stateDir, "workspace-coordinator", "IDENTITY.md"),
-  pm: path.join(stateDir, "workspace-pm", "IDENTITY.md"),
-  frontend: path.join(stateDir, "workspace-frontend", "IDENTITY.md"),
-  backend: path.join(stateDir, "workspace-backend", "IDENTITY.md"),
-  qa: path.join(stateDir, "workspace-qa", "IDENTITY.md"),
-};
 
 const coordinatorBlock = [
   "## 影子口径铁律",
   "",
   "- 你是唯一对外入口与出口。",
-  "- 所有来自用户 channel（如 feishu / webchat）的任务，必须先由你接住，再决定是否分派给诸司。",
+  "- 所有来自用户 channel（如 feishu / webchat）的任务，必须先由你接住，再决定是否分派给现有各司。",
   "- 其它 agent 只能向你回传内部结果、草稿、实现或风险，不得绕过你直接向用户 channel 做最终汇报。",
-  "- 需要协作时，优先使用 sessions_spawn、sessions_send、subagents 等内部手段组织分工；最终结论必须由你整合后对外输出。",
+  "- 需要协作时，优先先用 workers_list 识别现有可点名的 agent，再用 workers_dispatch 向对应 agent 派工。",
+  "- sessions_spawn 只用于临时 scratch / 并行辅助，不用于替代已有的命名 worker。",
   "- 你对外发言时，先给结论，再给理由，再给下一步；不要把 worker 的原始草稿原样甩给公子。",
 ].join("\n");
 
@@ -137,6 +128,14 @@ function normalizeBindings(config) {
   return kept;
 }
 
+function resolveIdentityPath(agent) {
+  const workspace =
+    typeof agent?.workspace === "string" && agent.workspace.trim()
+      ? agent.workspace.trim()
+      : path.join(stateDir, `workspace-${agent.id}`);
+  return path.join(workspace, "IDENTITY.md");
+}
+
 function main() {
   ensureFile(configPath);
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -187,6 +186,27 @@ function main() {
     }),
     ...keptExtras,
   ];
+
+  const allAgentIds = config.agents.list.map((agent) => agent.id).filter(Boolean);
+  const workerIds = allAgentIds.filter((agentId) => agentId !== "coordinator");
+  const coordinatorEntry = config.agents.list.find((agent) => agent.id === "coordinator");
+  if (coordinatorEntry) {
+    coordinatorEntry.subagents = coordinatorEntry.subagents || {};
+    coordinatorEntry.subagents.allowAgents = workerIds;
+  }
+  for (const agent of config.agents.list) {
+    if (!agent || agent.id === "coordinator") {
+      continue;
+    }
+    if (
+      agent.subagents &&
+      Array.isArray(agent.subagents.allowAgents) &&
+      agent.subagents.allowAgents.length === 0
+    ) {
+      delete agent.subagents.allowAgents;
+    }
+  }
+  config.tools.agentToAgent.allow = allAgentIds;
   config.bindings = normalizeBindings(config);
   config.meta = config.meta || {};
   config.meta.lastTouchedAt = new Date().toISOString();
@@ -200,19 +220,21 @@ function main() {
     ),
   );
 
-  const coordinatorIdentity = fs.existsSync(workspaceIdentityPaths.coordinator)
-    ? fs.readFileSync(workspaceIdentityPaths.coordinator, "utf8")
+  const coordinatorIdentityPath = resolveIdentityPath(coordinatorEntry || desiredAgents[0]);
+  const coordinatorIdentity = fs.existsSync(coordinatorIdentityPath)
+    ? fs.readFileSync(coordinatorIdentityPath, "utf8")
     : "# coordinator identity\n";
   results.push(
     writeIfChanged(
-      workspaceIdentityPaths.coordinator,
+      coordinatorIdentityPath,
       upsertManagedBlock(coordinatorIdentity, "OPENCLAW_SHADOW_COORDINATOR", coordinatorBlock),
       "updated coordinator identity constraints",
     ),
   );
 
-  for (const workerId of workerIds) {
-    const workerPath = workspaceIdentityPaths[workerId];
+  for (const agent of config.agents.list.filter((entry) => entry && entry.id !== "coordinator")) {
+    const workerId = agent.id;
+    const workerPath = resolveIdentityPath(agent);
     const content = fs.existsSync(workerPath)
       ? fs.readFileSync(workerPath, "utf8")
       : `# ${workerId} identity\n`;

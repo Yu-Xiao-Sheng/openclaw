@@ -27,6 +27,8 @@ import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
+import { createWorkersDispatchTool } from "./tools/workers-dispatch-tool.js";
+import { createWorkersListTool } from "./tools/workers-list-tool.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 type OpenClawToolsDeps = {
@@ -193,6 +195,17 @@ export function createOpenClawTools(
     createAgentsListTool({
       agentSessionKey: options?.agentSessionKey,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
+    }),
+    createWorkersListTool({
+      agentSessionKey: options?.agentSessionKey,
+      requesterAgentIdOverride: options?.requesterAgentIdOverride,
+      config: resolvedConfig,
+    }),
+    createWorkersDispatchTool({
+      agentSessionKey: options?.agentSessionKey,
+      requesterAgentIdOverride: options?.requesterAgentIdOverride,
+      config: resolvedConfig,
+      callGateway: openClawToolsDeps.callGateway,
     }),
     createSessionsListTool({
       agentSessionKey: options?.agentSessionKey,
