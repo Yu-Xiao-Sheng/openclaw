@@ -780,18 +780,18 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
         };
       }
 
-      const rebaseStep = await runStep(
-        step("git rebase", ["git", "-C", gitRoot, "rebase", selectedSha], gitRoot),
+      const mergeStep = await runStep(
+        step("git merge", ["git", "-C", gitRoot, "merge", "--no-edit", selectedSha], gitRoot),
       );
-      steps.push(rebaseStep);
-      if (rebaseStep.exitCode !== 0) {
-        const abortResult = await runCommand(["git", "-C", gitRoot, "rebase", "--abort"], {
+      steps.push(mergeStep);
+      if (mergeStep.exitCode !== 0) {
+        const abortResult = await runCommand(["git", "-C", gitRoot, "merge", "--abort"], {
           cwd: gitRoot,
           timeoutMs,
         });
         steps.push({
-          name: "git rebase --abort",
-          command: "git rebase --abort",
+          name: "git merge --abort",
+          command: "git merge --abort",
           cwd: gitRoot,
           durationMs: 0,
           exitCode: abortResult.code,
@@ -802,7 +802,7 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
           status: "error",
           mode: "git",
           root: gitRoot,
-          reason: "rebase-failed",
+          reason: "merge-failed",
           before: { sha: beforeSha, version: beforeVersion },
           steps,
           durationMs: Date.now() - startedAt,

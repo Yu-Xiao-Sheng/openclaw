@@ -1920,7 +1920,7 @@ install_openclaw_from_git() {
             local current_branch=""
             current_branch="$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
             if [[ "$current_branch" == "main" ]] && git -C "$repo_dir" rev-parse --verify upstream/main >/dev/null 2>&1; then
-                run_quiet_step "Syncing with upstream/main" git -C "$repo_dir" rebase upstream/main || true
+                run_quiet_step "Merging upstream/main" git -C "$repo_dir" merge --no-edit upstream/main || true
             else
                 run_quiet_step "Updating repository" git -C "$repo_dir" pull --rebase || true
             fi

@@ -21,7 +21,7 @@ if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     if [ "$current_branch" = "main" ] && git -C "$ROOT_DIR" remote get-url upstream >/dev/null 2>&1; then
       git -C "$ROOT_DIR" fetch upstream --prune --tags
       if git -C "$ROOT_DIR" rev-parse --verify upstream/main >/dev/null 2>&1; then
-        git -C "$ROOT_DIR" rebase upstream/main
+        git -C "$ROOT_DIR" merge --no-edit upstream/main
       fi
     fi
   else

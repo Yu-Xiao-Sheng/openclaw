@@ -294,10 +294,10 @@ describe("runGatewayUpdate", () => {
 
     expect(result.status).toBe("skipped");
     expect(result.reason).toBe("dirty");
-    expect(calls.some((call) => call.includes("rebase"))).toBe(false);
+    expect(calls.some((call) => call.includes("merge"))).toBe(false);
   });
 
-  it("aborts rebase on failure", async () => {
+  it("aborts merge on failure", async () => {
     await setupGitCheckout();
     const { runner, calls } = createRunner({
       ...buildGitWorktreeProbeResponses(),
@@ -305,15 +305,15 @@ describe("runGatewayUpdate", () => {
       [`git -C ${tempDir} rev-parse upstream/main`]: { stdout: "upstream123" },
       [`git -C ${tempDir} rev-parse @{upstream}`]: { stdout: "upstream123" },
       [`git -C ${tempDir} rev-list --max-count=10 upstream123`]: { stdout: "upstream123\n" },
-      [`git -C ${tempDir} rebase upstream123`]: { code: 1, stderr: "conflict" },
-      [`git -C ${tempDir} rebase --abort`]: { stdout: "" },
+      [`git -C ${tempDir} merge --no-edit upstream123`]: { code: 1, stderr: "conflict" },
+      [`git -C ${tempDir} merge --abort`]: { stdout: "" },
     });
 
     const result = await runWithRunner(runner);
 
     expect(result.status).toBe("error");
-    expect(result.reason).toBe("rebase-failed");
-    expect(calls.some((call) => call.includes("rebase --abort"))).toBe(true);
+    expect(result.reason).toBe("merge-failed");
+    expect(calls.some((call) => call.includes("merge --abort"))).toBe(true);
     expect(calls).toContain(`git -C ${tempDir} rev-parse upstream/main`);
     expect(calls).not.toContain(
       `git -C ${tempDir} rev-parse --abbrev-ref --symbolic-full-name @{upstream}`,
