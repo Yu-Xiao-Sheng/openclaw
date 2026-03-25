@@ -54,7 +54,12 @@ export const mergeUsageIntoAccumulator = (target: UsageAccumulator, usage: Maybe
   target.lastTotal = callTotal;
 };
 
-export const toNormalizedUsage = (usage: UsageAccumulator): NormalizedUsage | undefined => {
+export const toNormalizedUsage = (
+  usage: UsageAccumulator | null | undefined,
+): NormalizedUsage | undefined => {
+  if (!usage) {
+    return undefined;
+  }
   const hasUsage =
     usage.input > 0 ||
     usage.output > 0 ||

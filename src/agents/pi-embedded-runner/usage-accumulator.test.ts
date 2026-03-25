@@ -83,6 +83,10 @@ describe("usage-accumulator", () => {
   });
 
   describe("toNormalizedUsage", () => {
+    it("returns undefined when usage is missing", () => {
+      expect(toNormalizedUsage(undefined)).toBeUndefined();
+    });
+
     it("returns undefined for an empty accumulator", () => {
       expect(toNormalizedUsage(createUsageAccumulator())).toBeUndefined();
     });
