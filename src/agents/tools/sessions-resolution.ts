@@ -1,6 +1,6 @@
 import type { OpenClawConfig } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";
-import { isAcpSessionKey, normalizeMainKey } from "../../routing/session-key.js";
+import { isAcpSessionKey, normalizeAgentId, normalizeMainKey } from "../../routing/session-key.js";
 import { looksLikeSessionId } from "../../sessions/session-id.js";
 
 type GatewayCaller = typeof callGateway;
@@ -16,6 +16,20 @@ let sessionsResolutionDeps: {
 function normalizeKey(value?: string) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function normalizeBareAgentMainSessionKey(params: { key: string; mainKey: string }): string {
+  const raw = params.key.trim();
+  if (!raw) {
+    return raw;
+  }
+  const parts = raw.split(":").filter(Boolean);
+  if (parts.length !== 2 || parts[0]?.toLowerCase() !== "agent") {
+    return raw;
+  }
+  const agentId = normalizeAgentId(parts[1]);
+  const mainKey = normalizeMainKey(params.mainKey);
+  return `agent:${agentId}:${mainKey}`;
 }
 
 export function resolveMainSessionAlias(cfg: OpenClawConfig) {
@@ -47,7 +61,10 @@ export function resolveInternalSessionKey(params: {
   if (params.key === "main") {
     return params.alias;
   }
-  return params.key;
+  return normalizeBareAgentMainSessionKey({
+    key: params.key,
+    mainKey: params.mainKey,
+  });
 }
 
 export async function listSpawnedSessionKeys(params: {

@@ -752,6 +752,78 @@ describe("sessions tools", () => {
     });
   });
 
+  it("sessions_send normalizes bare cross-agent keys to the target main session", async () => {
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as {
+        method?: string;
+        params?: Record<string, unknown>;
+      };
+      if (request.method === "sessions.resolve") {
+        return {};
+      }
+      if (request.method === "agent") {
+        return { runId: "run-bare-agent", acceptedAt: 123 };
+      }
+      if (request.method === "agent.wait") {
+        return { status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        return {
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "reset ok" }],
+            },
+          ],
+        };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "agent:coordinator:feishu:direct:ou_123",
+      config: {
+        session: {
+          mainKey: "main",
+          scope: "per-sender",
+          agentToAgent: { maxPingPongTurns: 2 },
+        },
+        tools: {
+          sessions: { visibility: "all" },
+          agentToAgent: { enabled: true, allow: ["coordinator", "pm"] },
+        },
+      } as OpenClawConfig,
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-bare-agent", {
+      sessionKey: "agent:pm",
+      message: "/new",
+      timeoutSeconds: 5,
+    });
+    const details = result.details as {
+      status?: string;
+      reply?: string;
+      sessionKey?: string;
+    };
+    expect(details).toMatchObject({
+      status: "ok",
+      reply: "reset ok",
+      sessionKey: "agent:pm:main",
+    });
+
+    const agentCall = callGatewayMock.mock.calls.find(
+      (call) => (call[0] as { method?: string }).method === "agent",
+    );
+    expect(agentCall?.[0]).toMatchObject({
+      method: "agent",
+      params: { sessionKey: "agent:pm:main" },
+    });
+  });
+
   it("sessions_send runs ping-pong then announces", async () => {
     const calls: Array<{ method?: string; params?: unknown }> = [];
     let agentCallCount = 0;

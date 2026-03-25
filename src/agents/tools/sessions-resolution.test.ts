@@ -94,6 +94,15 @@ describe("session key display/internal mapping", () => {
     ).toBe("agent:ops:main");
   });
 
+  it("normalizes bare agent keys to the target main session", () => {
+    expect(resolveInternalSessionKey({ key: "agent:ops", alias: "global", mainKey: "main" })).toBe(
+      "agent:ops:main",
+    );
+    expect(resolveInternalSessionKey({ key: "AGENT:OPS", alias: "global", mainKey: "work" })).toBe(
+      "agent:ops:work",
+    );
+  });
+
   it("maps current to requester session key", () => {
     expect(
       resolveInternalSessionKey({
