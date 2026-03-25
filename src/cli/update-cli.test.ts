@@ -583,15 +583,15 @@ describe("update-cli", () => {
           mockPackageInstallStatus(createCaseDir("openclaw-update"));
           await updateCommand({ yes: true, tag: "main" });
         },
-        expectedSpec: "github:openclaw/openclaw#main",
+        expectedSpec: "github:Yu-Xiao-Sheng/openclaw#main",
       },
       {
         name: "explicit git package spec",
         run: async () => {
           mockPackageInstallStatus(createCaseDir("openclaw-update"));
-          await updateCommand({ yes: true, tag: "github:openclaw/openclaw#main" });
+          await updateCommand({ yes: true, tag: "github:Yu-Xiao-Sheng/openclaw#main" });
         },
-        expectedSpec: "github:openclaw/openclaw#main",
+        expectedSpec: "github:Yu-Xiao-Sheng/openclaw#main",
       },
       {
         name: "OPENCLAW_UPDATE_PACKAGE_SPEC override",
@@ -1030,11 +1030,28 @@ describe("update-cli", () => {
     const runCommandWithTimeoutMock = vi.mocked(runCommandWithTimeout) as unknown as {
       mock: { calls: Array<[unknown, { cwd?: string }?]> };
     };
-    const root = setup?.root ?? runCommandWithTimeoutMock.mock.calls[0]?.[1]?.cwd;
-    const entryPath = setup?.entryPath ?? path.join(String(root), "dist", "entry.js");
+    const matchingGatewayRefreshCall = runCommandWithTimeoutMock.mock.calls.find(([argv]) => {
+      return (
+        Array.isArray(argv) &&
+        argv.length >= 5 &&
+        typeof argv[0] === "string" &&
+        /node/.test(argv[0]) &&
+        argv[2] === "gateway" &&
+        argv[3] === "install" &&
+        argv[4] === "--force"
+      );
+    });
 
-    expect(runCommandWithTimeout).toHaveBeenCalledWith(
-      [expect.stringMatching(/node/), entryPath, "gateway", "install", "--force"],
+    expect(matchingGatewayRefreshCall).toBeDefined();
+    const matchedArgv = matchingGatewayRefreshCall?.[0] as string[] | undefined;
+    const entryPath = setup?.entryPath ?? matchedArgv?.[1];
+    const root =
+      setup?.root ??
+      matchingGatewayRefreshCall?.[1]?.cwd ??
+      (entryPath ? path.dirname(path.dirname(entryPath)) : undefined);
+
+    expect(entryPath).toBeDefined();
+    expect(matchingGatewayRefreshCall?.[1]).toEqual(
       testCase.expectedOptions(String(root), context),
     );
     testCase.assertExtra();

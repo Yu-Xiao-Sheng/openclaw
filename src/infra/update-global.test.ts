@@ -15,6 +15,7 @@ import {
   isExplicitPackageInstallSpec,
   isMainPackageTarget,
   OPENCLAW_MAIN_PACKAGE_SPEC,
+  resolveDefaultGitRepoUrl,
   resolveGlobalPackageRoot,
   resolveGlobalInstallSpec,
   resolveGlobalRoot,
@@ -30,12 +31,14 @@ describe("update global helpers", () => {
   });
 
   it("prefers explicit package spec overrides", () => {
-    envSnapshot = captureEnv(["OPENCLAW_UPDATE_PACKAGE_SPEC"]);
+    envSnapshot = captureEnv(["OPENCLAW_UPDATE_PACKAGE_SPEC", "OPENCLAW_UPDATE_GIT_REPO_URL"]);
     process.env.OPENCLAW_UPDATE_PACKAGE_SPEC = "file:/tmp/openclaw.tgz";
+    process.env.OPENCLAW_UPDATE_GIT_REPO_URL = "https://github.com/example/custom-openclaw.git";
 
     expect(resolveGlobalInstallSpec({ packageName: "openclaw", tag: "latest" })).toBe(
       "file:/tmp/openclaw.tgz",
     );
+    expect(resolveDefaultGitRepoUrl()).toBe("https://github.com/example/custom-openclaw.git");
     expect(
       resolveGlobalInstallSpec({
         packageName: "openclaw",
@@ -89,7 +92,7 @@ describe("update global helpers", () => {
     expect(isMainPackageTarget(" MAIN ")).toBe(true);
     expect(isMainPackageTarget("beta")).toBe(false);
 
-    expect(isExplicitPackageInstallSpec("github:openclaw/openclaw#main")).toBe(true);
+    expect(isExplicitPackageInstallSpec("github:Yu-Xiao-Sheng/openclaw#main")).toBe(true);
     expect(isExplicitPackageInstallSpec("https://example.com/openclaw-main.tgz")).toBe(true);
     expect(isExplicitPackageInstallSpec("file:/tmp/openclaw-main.tgz")).toBe(true);
     expect(isExplicitPackageInstallSpec("beta")).toBe(false);
@@ -97,7 +100,9 @@ describe("update global helpers", () => {
     expect(canResolveRegistryVersionForPackageTarget("latest")).toBe(true);
     expect(canResolveRegistryVersionForPackageTarget("2026.3.22")).toBe(true);
     expect(canResolveRegistryVersionForPackageTarget("main")).toBe(false);
-    expect(canResolveRegistryVersionForPackageTarget("github:openclaw/openclaw#main")).toBe(false);
+    expect(canResolveRegistryVersionForPackageTarget("github:Yu-Xiao-Sheng/openclaw#main")).toBe(
+      false,
+    );
   });
 
   it("detects install managers from resolved roots and on-disk presence", async () => {

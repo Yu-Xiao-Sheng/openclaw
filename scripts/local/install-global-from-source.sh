@@ -15,6 +15,20 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if [ -z "$(git -C "$ROOT_DIR" status --porcelain -- 2>/dev/null)" ]; then
+    current_branch="$(git -C "$ROOT_DIR" branch --show-current 2>/dev/null || true)"
+    if [ "$current_branch" = "main" ] && git -C "$ROOT_DIR" remote get-url upstream >/dev/null 2>&1; then
+      git -C "$ROOT_DIR" fetch upstream --prune --tags
+      if git -C "$ROOT_DIR" rev-parse --verify upstream/main >/dev/null 2>&1; then
+        git -C "$ROOT_DIR" rebase upstream/main
+      fi
+    fi
+  else
+    echo "Skipping upstream sync because the checkout has local changes." >&2
+  fi
+fi
+
 pnpm install --frozen-lockfile
 pnpm build
 npm install -g .

@@ -16,7 +16,9 @@ export type CommandRunner = (
 const PRIMARY_PACKAGE_NAME = "openclaw";
 const ALL_PACKAGE_NAMES = [PRIMARY_PACKAGE_NAME] as const;
 const GLOBAL_RENAME_PREFIX = ".";
-export const OPENCLAW_MAIN_PACKAGE_SPEC = "github:openclaw/openclaw#main";
+export const OPENCLAW_DEFAULT_GIT_REPO_URL = "https://github.com/Yu-Xiao-Sheng/openclaw.git";
+export const OPENCLAW_DEFAULT_UPSTREAM_GIT_REPO_URL = "https://github.com/openclaw/openclaw.git";
+export const OPENCLAW_MAIN_PACKAGE_SPEC = "github:Yu-Xiao-Sheng/openclaw#main";
 const NPM_GLOBAL_INSTALL_QUIET_FLAGS = ["--no-fund", "--no-audit", "--loglevel=error"] as const;
 const NPM_GLOBAL_INSTALL_OMIT_OPTIONAL_FLAGS = [
   "--omit=optional",
@@ -25,6 +27,30 @@ const NPM_GLOBAL_INSTALL_OMIT_OPTIONAL_FLAGS = [
 
 function normalizePackageTarget(value: string): string {
   return value.trim();
+}
+
+export function resolveDefaultGitRepoUrl(env?: NodeJS.ProcessEnv): string {
+  return (
+    env?.OPENCLAW_UPDATE_GIT_REPO_URL?.trim() ||
+    process.env.OPENCLAW_UPDATE_GIT_REPO_URL?.trim() ||
+    OPENCLAW_DEFAULT_GIT_REPO_URL
+  );
+}
+
+export function resolveDefaultUpstreamGitRepoUrl(env?: NodeJS.ProcessEnv): string {
+  return (
+    env?.OPENCLAW_UPDATE_UPSTREAM_GIT_REPO_URL?.trim() ||
+    process.env.OPENCLAW_UPDATE_UPSTREAM_GIT_REPO_URL?.trim() ||
+    OPENCLAW_DEFAULT_UPSTREAM_GIT_REPO_URL
+  );
+}
+
+export function resolveMainPackageSpec(env?: NodeJS.ProcessEnv): string {
+  return (
+    env?.OPENCLAW_UPDATE_MAIN_PACKAGE_SPEC?.trim() ||
+    process.env.OPENCLAW_UPDATE_MAIN_PACKAGE_SPEC?.trim() ||
+    OPENCLAW_MAIN_PACKAGE_SPEC
+  );
 }
 
 export function isMainPackageTarget(value: string): boolean {
@@ -142,7 +168,7 @@ export function resolveGlobalInstallSpec(params: {
   }
   const target = normalizePackageTarget(params.tag);
   if (isMainPackageTarget(target)) {
-    return OPENCLAW_MAIN_PACKAGE_SPEC;
+    return resolveMainPackageSpec(params.env);
   }
   if (isExplicitPackageInstallSpec(target)) {
     return target;
