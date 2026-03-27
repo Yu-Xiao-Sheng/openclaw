@@ -13,6 +13,7 @@ import {
   describeWorkerAccessReason,
   resolveWorkerRequesterContext,
 } from "../worker-directory.js";
+import { registerWorker, updateWorkerStatus } from "../workers-registry.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam } from "./common.js";
 import { extractAssistantText, stripToolMessages } from "./sessions-helpers.js";
@@ -21,7 +22,7 @@ const WorkersDispatchToolSchema = Type.Object({
   agentId: Type.String({ minLength: 1 }),
   task: Type.String({ minLength: 1 }),
   wait: Type.Optional(Type.Boolean()),
-  timeoutSeconds: Type.Optional(Type.Number({ minimum: 0 })),
+  timeoutSeconds: Type.Optional(Type.Number()),
   interruptRunning: Type.Optional(Type.Boolean()),
 });
 
@@ -49,11 +50,19 @@ function resolveWorkerAnnounceTimeoutSeconds(params: {
   cfg: OpenClawConfig;
   requestedTimeoutSeconds: number;
 }): number {
+  // -1 means infinite wait — use a large timeout for the announce flow
+  if (params.requestedTimeoutSeconds === -1) {
+    return 86_400; // 24 hours
+  }
   const configuredTimeoutSeconds =
     typeof params.cfg.agents?.defaults?.timeoutSeconds === "number" &&
     Number.isFinite(params.cfg.agents.defaults.timeoutSeconds)
       ? Math.max(0, Math.floor(params.cfg.agents.defaults.timeoutSeconds))
       : 600;
+  // 0 (undefined mapped to 0) also defaults to infinite wait
+  if (params.requestedTimeoutSeconds === 0) {
+    return -1;
+  }
   return Math.max(60, configuredTimeoutSeconds, params.requestedTimeoutSeconds);
 }
 
@@ -65,23 +74,41 @@ function scheduleWorkerCompletionAnnounce(params: {
   task: string;
   timeoutSeconds: number;
 }) {
-  void params
-    .announceCompletion({
-      childSessionKey: params.sessionKey,
-      childRunId: params.runId,
-      requesterSessionKey: params.requesterSessionKey,
-      requesterDisplayKey: params.requesterSessionKey,
-      task: params.task,
-      timeoutMs: Math.max(1, params.timeoutSeconds) * 1000,
-      cleanup: "keep",
-      waitForCompletion: true,
-      expectsCompletionMessage: true,
-      spawnMode: "session",
-      bestEffortDeliver: true,
-    })
-    .catch(() => {
-      // Best-effort wake path only.
-    });
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 5_000;
+
+  void (async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        await params.announceCompletion({
+          childSessionKey: params.sessionKey,
+          childRunId: params.runId,
+          requesterSessionKey: params.requesterSessionKey,
+          requesterDisplayKey: params.requesterSessionKey,
+          task: params.task,
+          timeoutMs:
+            params.timeoutSeconds === -1 ? 86_400_000 : Math.max(1, params.timeoutSeconds) * 1000,
+          cleanup: "keep",
+          waitForCompletion: true,
+          expectsCompletionMessage: true,
+          spawnMode: "session",
+          bestEffortDeliver: false,
+        });
+        return;
+      } catch (err) {
+        lastError = err;
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        }
+      }
+    }
+    // All retries exhausted — log but do not propagate
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    console.error(
+      `[workers_dispatch] completion announce failed after ${MAX_RETRIES} retries: ${message}`,
+    );
+  })();
 }
 
 function sortSessionsByFreshness(rows: SessionListRow[]): SessionListRow[] {
@@ -188,7 +215,7 @@ async function waitForWorkerReply(params: {
   callGateway: GatewayCaller;
   runId: string;
   sessionKey: string;
-  timeoutSeconds: number;
+  timeoutSeconds: number; // -1 = infinite wait
 }): Promise<
   | {
       status: "ok";
@@ -199,6 +226,56 @@ async function waitForWorkerReply(params: {
       error?: string;
     }
 > {
+  const POLL_INTERVAL_MS = 60_000; // 60 seconds per poll cycle
+
+  // Infinite-wait polling loop: poll every 60s until ok/error
+  if (params.timeoutSeconds === -1) {
+    for (;;) {
+      let waitStatus: string | undefined;
+      let waitError: string | undefined;
+      try {
+        const wait = await params.callGateway<{ status?: string; error?: string }>({
+          method: "agent.wait",
+          params: {
+            runId: params.runId,
+            timeoutMs: POLL_INTERVAL_MS,
+          },
+          timeoutMs: POLL_INTERVAL_MS + 2_000,
+        });
+        waitStatus = typeof wait?.status === "string" ? wait.status : undefined;
+        waitError = typeof wait?.error === "string" ? wait.error : undefined;
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        if (!error.includes("gateway timeout")) {
+          // Non-timeout error: back off briefly before retrying
+          await new Promise((resolve) => setTimeout(resolve, 5_000));
+        }
+        continue;
+      }
+
+      if (waitStatus === "error") {
+        return {
+          status: "error",
+          error: waitError ?? "agent error",
+        };
+      }
+
+      if (waitStatus === "ok") {
+        // 检查是否有包含文本内容的最终回复
+        const reply = await fetchLastReply(params.callGateway, params.sessionKey);
+        // 如果有文本回复，返回；否则继续轮询（agent可能在等待子进程）
+        if (reply.status === "ok" && reply.reply?.trim()) {
+          return reply;
+        }
+        // 没有文本回复，继续等待
+        continue;
+      }
+
+      // timeout or other transient status — continue polling
+    }
+  }
+
+  // Finite timeout: single call
   const timeoutMs = Math.max(0, Math.floor(params.timeoutSeconds * 1000));
   let waitStatus: string | undefined;
   let waitError: string | undefined;
@@ -234,26 +311,50 @@ async function waitForWorkerReply(params: {
     };
   }
 
-  const history = await params.callGateway<{ messages?: Array<unknown> }>({
-    method: "chat.history",
-    params: {
-      sessionKey: params.sessionKey,
-      limit: 50,
-    },
-    timeoutMs: 10_000,
-  });
-  const messages = stripToolMessages(Array.isArray(history?.messages) ? history.messages : []);
-  const lastAssistant = [...messages].toReversed().find((message) => {
-    return Boolean(
-      message &&
-      typeof message === "object" &&
-      (message as { role?: unknown }).role === "assistant",
-    );
-  });
-  return {
-    status: "ok",
-    reply: lastAssistant ? extractAssistantText(lastAssistant) : undefined,
-  };
+  return await fetchLastReply(params.callGateway, params.sessionKey);
+}
+
+async function fetchLastReply(
+  callGateway: GatewayCaller,
+  sessionKey: string,
+): Promise<
+  | {
+      status: "ok";
+      reply?: string;
+    }
+  | {
+      status: "error";
+      error?: string;
+    }
+> {
+  try {
+    const history = await callGateway<{ messages?: Array<unknown> }>({
+      method: "chat.history",
+      params: {
+        sessionKey,
+        limit: 50,
+      },
+      timeoutMs: 10_000,
+    });
+    const messages = stripToolMessages(Array.isArray(history?.messages) ? history.messages : []);
+    const lastAssistant = [...messages].toReversed().find((message) => {
+      return Boolean(
+        message &&
+        typeof message === "object" &&
+        (message as { role?: unknown }).role === "assistant",
+      );
+    });
+    return {
+      status: "ok",
+      reply: lastAssistant ? extractAssistantText(lastAssistant) : undefined,
+    };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return {
+      status: "error",
+      error,
+    };
+  }
 }
 
 export function createWorkersDispatchTool(opts?: {
@@ -283,10 +384,14 @@ export function createWorkersDispatchTool(opts?: {
       const task = readStringParam(params, "task", { required: true });
       const wait = params.wait === true;
       const interruptRunning = params.interruptRunning === true;
+      // Default to infinite wait (-1) unless explicitly set to a positive number
+      //公子要求：默认永不超时，只有显式设置 timeoutSeconds > 0 才启用超时
       const timeoutSeconds =
-        typeof params.timeoutSeconds === "number" && Number.isFinite(params.timeoutSeconds)
-          ? Math.max(0, Math.floor(params.timeoutSeconds))
-          : 30;
+        typeof params.timeoutSeconds === "number" &&
+        Number.isFinite(params.timeoutSeconds) &&
+        params.timeoutSeconds > 0
+          ? Math.floor(params.timeoutSeconds)
+          : -1; // 默认无限等待
       const announceTimeoutSeconds = resolveWorkerAnnounceTimeoutSeconds({
         cfg,
         requestedTimeoutSeconds: timeoutSeconds,
@@ -398,7 +503,19 @@ export function createWorkersDispatchTool(opts?: {
         });
       }
 
-      if (!wait || timeoutSeconds === 0) {
+      // 当 timeoutSeconds = -1（无限等待）时，强制走同步路径
+      if (!wait && timeoutSeconds >= 0) {
+        // 注册worker到registry
+        registerWorker({
+          sessionKey,
+          runId,
+          agentId,
+          requesterSessionKey: requester.requesterInternalKey,
+          task,
+          startedAt: Date.now(),
+          status: "running",
+        });
+
         scheduleWorkerCompletionAnnounce({
           announceCompletion,
           requesterSessionKey: requester.requesterInternalKey,
@@ -421,6 +538,17 @@ export function createWorkersDispatchTool(opts?: {
         });
       }
 
+      // 同步等待路径：也注册worker
+      registerWorker({
+        sessionKey,
+        runId,
+        agentId,
+        requesterSessionKey: requester.requesterInternalKey,
+        task,
+        startedAt: Date.now(),
+        status: "running",
+      });
+
       const waited = await waitForWorkerReply({
         callGateway: gatewayCall,
         runId,
@@ -428,6 +556,13 @@ export function createWorkersDispatchTool(opts?: {
         timeoutSeconds,
       });
       if (waited.status !== "ok") {
+        // 更新worker状态
+        updateWorkerStatus(sessionKey, runId, {
+          status: waited.status === "timeout" ? "timeout" : "error",
+          error: waited.error,
+          endedAt: Date.now(),
+        });
+
         return jsonResult({
           status: waited.status,
           error: waited.error,
@@ -441,6 +576,12 @@ export function createWorkersDispatchTool(opts?: {
           dispatchMode: interruptRunning ? "steer" : "send",
         });
       }
+
+      // 更新worker状态为完成
+      updateWorkerStatus(sessionKey, runId, {
+        status: "done",
+        endedAt: Date.now(),
+      });
 
       return jsonResult({
         status: "ok",

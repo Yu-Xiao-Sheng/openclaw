@@ -6,6 +6,10 @@ import { parseSessionThreadInfo } from "../config/sessions/delivery-info.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { deliverOutboundPayloads } from "../infra/outbound/deliver.js";
 import { ackDelivery, enqueueDelivery, failDelivery } from "../infra/outbound/delivery-queue.js";
+import {
+  clearRestartingFlag,
+  consumePendingMessages,
+} from "../infra/outbound/restart-pending-messages.js";
 import { buildOutboundSessionContext } from "../infra/outbound/session-context.js";
 import { resolveOutboundTarget } from "../infra/outbound/targets.js";
 import {
@@ -210,6 +214,37 @@ export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
     threadId: resolvedThreadId,
     session: outboundSession,
   });
+
+  // 清除重启标志
+  clearRestartingFlag();
+
+  // 重发缓存的待发送消息
+  const pendingMessages = consumePendingMessages();
+  if (pendingMessages.length > 0) {
+    log.info(`重发 ${pendingMessages.length} 条缓存消息`);
+    for (const msg of pendingMessages) {
+      try {
+        await deliverOutboundPayloads({
+          cfg,
+          channel: msg.channel,
+          to: msg.to,
+          accountId: msg.accountId,
+          threadId: msg.threadId,
+          payloads: [{ text: msg.message }],
+          session: buildOutboundSessionContext({ cfg, sessionKey: msg.sessionKey }),
+          deps: params.deps,
+          bestEffort: true,
+          skipQueue: true,
+        });
+      } catch (err) {
+        log.warn(`重发缓存消息失败: ${String(err)}`, {
+          channel: msg.channel,
+          to: msg.to,
+          sessionKey: msg.sessionKey,
+        });
+      }
+    }
+  }
 }
 
 export function shouldWakeFromRestartSentinel() {

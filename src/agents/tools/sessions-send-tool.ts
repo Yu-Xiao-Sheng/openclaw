@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";
-import { ADMIN_SCOPE } from "../../gateway/method-scopes.js";
+import { ADMIN_SCOPE, type OperatorScope } from "../../gateway/method-scopes.js";
 import { normalizeAgentId, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { SESSION_LABEL_MAX_LENGTH } from "../../sessions/session-label.js";
 import {
@@ -36,7 +36,7 @@ const SessionsSendToolSchema = Type.Object({
 type GatewayCaller = typeof callGateway;
 const SESSION_RESET_COMMAND_RE = /^\/(new|reset)(?:\s+[\s\S]*)?$/i;
 
-function resolveAgentCallScopes(message: string): string[] | undefined {
+function resolveAgentCallScopes(message: string): OperatorScope[] | undefined {
   if (SESSION_RESET_COMMAND_RE.test(message.trimStart())) {
     return [ADMIN_SCOPE];
   }

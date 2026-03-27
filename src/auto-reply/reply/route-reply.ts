@@ -11,6 +11,10 @@ import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveEffectiveMessagesConfig } from "../../agents/identity.js";
 import { getChannelPlugin, normalizeChannelId } from "../../channels/plugins/index.js";
 import type { OpenClawConfig } from "../../config/config.js";
+import {
+  isGatewayRestarting,
+  cachePendingMessage,
+} from "../../infra/outbound/restart-pending-messages.js";
 import { buildOutboundSessionContext } from "../../infra/outbound/session-context.js";
 import { hasReplyPayloadContent } from "../../interactive/payload.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
@@ -63,6 +67,8 @@ export type RouteReplyResult = {
   messageId?: string;
   /** Error message if the send failed. */
   error?: string;
+  /** Whether the message was cached for later delivery (e.g., during Gateway restart). */
+  cached?: boolean;
 };
 
 /**
@@ -206,6 +212,22 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
     return { ok: true, messageId: last?.messageId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+
+    // 如果 Gateway 正在重启，缓存消息以便重启后重发
+    if (isGatewayRestarting()) {
+      cachePendingMessage({
+        sessionKey: params.sessionKey ?? "",
+        channel: channelId,
+        to,
+        accountId: accountId ?? undefined,
+        threadId: resolvedThreadId != null ? String(resolvedThreadId) : undefined,
+        message: text,
+      });
+      // 返回 ok，让调用者认为消息已发送
+      // 实际上消息会在 Gateway 重启后重发
+      return { ok: true, messageId: undefined, cached: true };
+    }
+
     return {
       ok: false,
       error: `Failed to route reply to ${channel}: ${message}`,

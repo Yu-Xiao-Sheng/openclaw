@@ -30,6 +30,7 @@ import { createTtsTool } from "./tools/tts-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { createWorkersDispatchTool } from "./tools/workers-dispatch-tool.js";
 import { createWorkersListTool } from "./tools/workers-list-tool.js";
+import { createWorkersTool } from "./tools/workers-tool.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 type OpenClawToolsDeps = {
@@ -210,6 +211,9 @@ export function createOpenClawTools(
       config: resolvedConfig,
       callGateway: openClawToolsDeps.callGateway,
       announceCompletion: openClawToolsDeps.announceWorkerCompletion,
+    }),
+    createWorkersTool({
+      agentSessionKey: options?.agentSessionKey,
     }),
     createSessionsListTool({
       agentSessionKey: options?.agentSessionKey,

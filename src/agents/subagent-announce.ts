@@ -1391,7 +1391,12 @@ export async function runSubagentAnnounceFlow(params: {
         ? entry.sessionId.trim()
         : undefined;
     })();
-    const settleTimeoutMs = Math.min(Math.max(params.timeoutMs, 1), 120_000);
+    // 86400000 = 24 hours, used as "infinite wait" sentinel
+    //公子要求：默认永不超时，只有显式设置的超时才限制
+    const isInfiniteWait = params.timeoutMs >= 86_400_000;
+    const settleTimeoutMs = isInfiniteWait
+      ? params.timeoutMs
+      : Math.min(Math.max(params.timeoutMs, 1), 120_000);
     let reply = params.roundOneReply;
     let outcome: SubagentRunOutcome | undefined = params.outcome;
     if (childSessionId && isEmbeddedPiRunActive(childSessionId)) {

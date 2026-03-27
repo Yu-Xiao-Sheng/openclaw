@@ -20,6 +20,7 @@ import { loadGatewayRuntimeConfigSchema } from "../../config/runtime-schema.js";
 import { lookupConfigSchema, type ConfigSchemaResponse } from "../../config/schema.js";
 import { extractDeliveryInfo } from "../../config/sessions.js";
 import type { ConfigValidationIssue, OpenClawConfig } from "../../config/types.openclaw.js";
+import { setRestartingFlag } from "../../infra/outbound/restart-pending-messages.js";
 import {
   formatDoctorNonInteractiveHint,
   type RestartSentinelPayload,
@@ -416,6 +417,12 @@ export const configHandlers: GatewayRequestHandlers = {
         changedPaths,
       },
     });
+
+    // 设置重启标志，让 agent 知道 Gateway 正在重启
+    if (restart.ok && !restart.coalesced) {
+      setRestartingFlag();
+    }
+
     if (restart.coalesced) {
       context?.logGateway?.warn(
         `config.patch restart coalesced ${formatControlPlaneActor(actor)} delayMs=${restart.delayMs}`,
@@ -476,6 +483,12 @@ export const configHandlers: GatewayRequestHandlers = {
         changedPaths,
       },
     });
+
+    // 设置重启标志，让 agent 知道 Gateway 正在重启
+    if (restart.ok && !restart.coalesced) {
+      setRestartingFlag();
+    }
+
     if (restart.coalesced) {
       context?.logGateway?.warn(
         `config.apply restart coalesced ${formatControlPlaneActor(actor)} delayMs=${restart.delayMs}`,
